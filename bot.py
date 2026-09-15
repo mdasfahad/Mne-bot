@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 import subprocess
 import sys
@@ -38,7 +37,7 @@ from flask import Flask
 from threading import Thread
 
 # --- Configuration from environment variables ---
-TOKEN = os.environ.get("8603057367:AAG2uF_wENaVCPLgx1EOjQJoFcz1DfjkxT8")
+TOKEN = "8603057367:AAG2uF_wENaVCPLgx1EOjQJoFcz1DfjkxT8"
 if not TOKEN:
     raise ValueError("❌ BOT_TOKEN environment variable not set!")
 
@@ -281,7 +280,7 @@ def kill_process_tree(process_info):
         elif log_file_closed: logger.warning(f"Process object missing for {script_key}, but log file closed.")
         else: logger.error(f"Process object missing for {script_key}, and no log file. Cannot kill.")
     except Exception as e:
-        logger.error(f"❌ Unexpected error killing process tree for PID {pid or 'N/A'} ({script_key}): {e}", exc_info=True)
+        logger.error(f"❌ Unexpected error killing process tree for PID {pid or 'N/A'} ({script_key}): {e}", exp_info=True)
 
 # --- Automatic Package Installation & Script Running ---
 def attempt_install_pip(module_name, message):
@@ -306,7 +305,7 @@ def attempt_install_pip(module_name, message):
             return False
     except Exception as e:
         error_msg = f"❌ Error installing `{package_name}`: {str(e)}"
-        logger.error(error_msg, exc_info=True)
+        logger.error(error_msg, exp_info=True)
         bot.reply_to(message, error_msg)
         return False
 
@@ -333,7 +332,7 @@ def attempt_install_npm(module_name, user_folder, message):
          return False
     except Exception as e:
         error_msg = f"❌ Error installing Node package `{module_name}`: {str(e)}"
-        logger.error(error_msg, exc_info=True)
+        logger.error(error_msg, exp_info=True)
         bot.reply_to(message, error_msg)
         return False
 
@@ -392,7 +391,7 @@ def run_script(script_path, script_owner_id, user_folder, file_name, message_obj
                  bot.reply_to(message_obj_for_reply, f"❌ Error: Python interpreter '{sys.executable}' not found.")
                  return
             except Exception as e:
-                 logger.error(f"Error in Python pre-check for {script_key}: {e}", exc_info=True)
+                 logger.error(f"Error in Python pre-check for {script_key}: {e}", exp_info=True)
                  bot.reply_to(message_obj_for_reply, f"❌ Unexpected error in script pre-check for '{file_name}': {e}")
                  return
             finally:
@@ -405,7 +404,7 @@ def run_script(script_path, script_owner_id, user_folder, file_name, message_obj
         log_file = None; process = None
         try: log_file = open(log_file_path, 'w', encoding='utf-8', errors='ignore')
         except Exception as e:
-             logger.error(f"Failed to open log file '{log_file_path}' for {script_key}: {e}", exc_info=True)
+             logger.error(f"Failed to open log file '{log_file_path}' for {script_key}: {e}", exp_info=True)
              bot.reply_to(message_obj_for_reply, f"❌ Failed to open log file '{log_file_path}': {e}")
              return
         try:
@@ -434,7 +433,7 @@ def run_script(script_path, script_owner_id, user_folder, file_name, message_obj
         except Exception as e:
             if log_file and not log_file.closed: log_file.close()
             error_msg = f"❌ Error starting Python script '{file_name}': {str(e)}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg, exp_info=True)
             bot.reply_to(message_obj_for_reply, error_msg)
             if process and process.poll() is None:
                  logger.warning(f"Killing potentially started Python process {process.pid} for {script_key}")
@@ -442,7 +441,7 @@ def run_script(script_path, script_owner_id, user_folder, file_name, message_obj
             if script_key in bot_scripts: del bot_scripts[script_key]
     except Exception as e:
         error_msg = f"❌ Unexpected error running Python script '{file_name}': {str(e)}"
-        logger.error(error_msg, exc_info=True)
+        logger.error(error_msg, exp_info=True)
         bot.reply_to(message_obj_for_reply, error_msg)
         if script_key in bot_scripts:
              logger.warning(f"Cleaning up {script_key} due to error in run_script.")
@@ -506,7 +505,7 @@ def run_js_script(script_path, script_owner_id, user_folder, file_name, message_
                  bot.reply_to(message_obj_for_reply, error_msg)
                  return
             except Exception as e:
-                 logger.error(f"Error in JS pre-check for {script_key}: {e}", exc_info=True)
+                 logger.error(f"Error in JS pre-check for {script_key}: {e}", exp_info=True)
                  bot.reply_to(message_obj_for_reply, f"❌ Unexpected error in JS pre-check for '{file_name}': {e}")
                  return
             finally:
@@ -519,7 +518,7 @@ def run_js_script(script_path, script_owner_id, user_folder, file_name, message_
         log_file = None; process = None
         try: log_file = open(log_file_path, 'w', encoding='utf-8', errors='ignore')
         except Exception as e:
-            logger.error(f"Failed to open log file '{log_file_path}' for JS script {script_key}: {e}", exc_info=True)
+            logger.error(f"Failed to open log file '{log_file_path}' for JS script {script_key}: {e}", exp_info=True)
             bot.reply_to(message_obj_for_reply, f"❌ Failed to open log file '{log_file_path}': {e}")
             return
         try:
@@ -549,7 +548,7 @@ def run_js_script(script_path, script_owner_id, user_folder, file_name, message_
         except Exception as e:
             if log_file and not log_file.closed: log_file.close()
             error_msg = f"❌ Error starting JS script '{file_name}': {str(e)}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg, exp_info=True)
             bot.reply_to(message_obj_for_reply, error_msg)
             if process and process.poll() is None:
                  logger.warning(f"Killing potentially started JS process {process.pid} for {script_key}")
@@ -557,7 +556,7 @@ def run_js_script(script_path, script_owner_id, user_folder, file_name, message_
             if script_key in bot_scripts: del bot_scripts[script_key]
     except Exception as e:
         error_msg = f"❌ Unexpected error running JS script '{file_name}': {str(e)}"
-        logger.error(error_msg, exc_info=True)
+        logger.error(error_msg, exp_info=True)
         bot.reply_to(message_obj_for_reply, error_msg)
         if script_key in bot_scripts:
              logger.warning(f"Cleaning up {script_key} due to error in run_js_script.")
@@ -684,7 +683,7 @@ def save_user_file(user_id, file_name, file_type='py'):
             user_files[user_id].append((file_name, file_type))
             logger.info(f"Saved file '{file_name}' ({file_type}) for user {user_id}")
         except sqlite3.Error as e: logger.error(f"❌ SQLite error saving file for user {user_id}, {file_name}: {e}")
-        except Exception as e: logger.error(f"❌ Unexpected error saving file for {user_id}, {file_name}: {e}", exc_info=True)
+        except Exception as e: logger.error(f"❌ Unexpected error saving file for {user_id}, {file_name}: {e}", exp_info=True)
         finally: conn.close()
 
 def remove_user_file_db(user_id, file_name):
@@ -699,7 +698,7 @@ def remove_user_file_db(user_id, file_name):
                 if not user_files[user_id]: del user_files[user_id]
             logger.info(f"Removed file '{file_name}' for user {user_id} from DB")
         except sqlite3.Error as e: logger.error(f"❌ SQLite error removing file for {user_id}, {file_name}: {e}")
-        except Exception as e: logger.error(f"❌ Unexpected error removing file for {user_id}, {file_name}: {e}", exc_info=True)
+        except Exception as e: logger.error(f"❌ Unexpected error removing file for {user_id}, {file_name}: {e}", exp_info=True)
         finally: conn.close()
 
 def add_active_user(user_id):
@@ -712,7 +711,7 @@ def add_active_user(user_id):
             conn.commit()
             logger.info(f"Added/Confirmed active user {user_id} in DB")
         except sqlite3.Error as e: logger.error(f"❌ SQLite error adding active user {user_id}: {e}")
-        except Exception as e: logger.error(f"❌ Unexpected error adding active user {user_id}: {e}", exc_info=True)
+        except Exception as e: logger.error(f"❌ Unexpected error adding active user {user_id}: {e}", exp_info=True)
         finally: conn.close()
 
 def save_subscription(user_id, expiry):
@@ -726,7 +725,7 @@ def save_subscription(user_id, expiry):
             user_subscriptions[user_id] = {'expiry': expiry}
             logger.info(f"Saved subscription for {user_id}, expiry {expiry_str}")
         except sqlite3.Error as e: logger.error(f"❌ SQLite error saving subscription for {user_id}: {e}")
-        except Exception as e: logger.error(f"❌ Unexpected error saving subscription for {user_id}: {e}", exc_info=True)
+        except Exception as e: logger.error(f"❌ Unexpected error saving subscription for {user_id}: {e}", exp_info=True)
         finally: conn.close()
 
 def remove_subscription_db(user_id):
@@ -739,7 +738,7 @@ def remove_subscription_db(user_id):
             if user_id in user_subscriptions: del user_subscriptions[user_id]
             logger.info(f"Removed subscription for {user_id} from DB")
         except sqlite3.Error as e: logger.error(f"❌ SQLite error removing subscription for {user_id}: {e}")
-        except Exception as e: logger.error(f"❌ Unexpected error removing subscription for {user_id}: {e}", exc_info=True)
+        except Exception as e: logger.error(f"❌ Unexpected error removing subscription for {user_id}: {e}", exp_info=True)
         finally: conn.close()
 
 def add_admin_db(admin_id):
@@ -752,7 +751,7 @@ def add_admin_db(admin_id):
             admin_ids.add(admin_id)
             logger.info(f"Added admin {admin_id} to DB")
         except sqlite3.Error as e: logger.error(f"❌ SQLite error adding admin {admin_id}: {e}")
-        except Exception as e: logger.error(f"❌ Unexpected error adding admin {admin_id}: {e}", exc_info=True)
+        except Exception as e: logger.error(f"❌ Unexpected error adding admin {admin_id}: {e}", exp_info=True)
         finally: conn.close()
 
 def remove_admin_db(admin_id):
@@ -776,7 +775,7 @@ def remove_admin_db(admin_id):
                 admin_ids.discard(admin_id)
             return removed
         except sqlite3.Error as e: logger.error(f"❌ SQLite error removing admin {admin_id}: {e}"); return False
-        except Exception as e: logger.error(f"❌ Unexpected error removing admin {admin_id}: {e}", exc_info=True); return False
+        except Exception as e: logger.error(f"❌ Unexpected error removing admin {admin_id}: {e}", exp_info=True); return False
         finally: conn.close()
 # --- End Database Operations ---
 
@@ -906,7 +905,7 @@ def handle_zip_file(downloaded_file_content, file_name_zip, message):
                 bot.reply_to(message, error_msg, parse_mode='Markdown'); return
             except Exception as e:
                  error_msg = f"❌ Unexpected error installing Python deps: {e}"
-                 logger.error(error_msg, exc_info=True); bot.reply_to(message, error_msg); return
+                 logger.error(error_msg, exp_info=True); bot.reply_to(message, error_msg); return
 
         if pkg_json:
             logger.info(f"package.json found, npm install in: {temp_dir}")
@@ -925,7 +924,7 @@ def handle_zip_file(downloaded_file_content, file_name_zip, message):
                 bot.reply_to(message, error_msg, parse_mode='Markdown'); return
             except Exception as e:
                  error_msg = f"❌ Unexpected error installing Node deps: {e}"
-                 logger.error(error_msg, exc_info=True); bot.reply_to(message, error_msg); return
+                 logger.error(error_msg, exp_info=True); bot.reply_to(message, error_msg); return
 
         main_script_name = None; file_type = None
         preferred_py = ['main.py', 'bot.py', 'app.py']; preferred_js = ['index.js', 'main.js', 'bot.js', 'app.js']
@@ -964,19 +963,19 @@ def handle_zip_file(downloaded_file_content, file_name_zip, message):
         logger.error(f"Bad zip file from {user_id}: {e}")
         bot.reply_to(message, f"❌ Error: Invalid/corrupted ZIP. {e}")
     except Exception as e:
-        logger.error(f"❌ Error processing zip for {user_id}: {e}", exc_info=True)
+        logger.error(f"❌ Error processing zip for {user_id}: {e}", exp_info=True)
         bot.reply_to(message, f"❌ Error processing zip: {str(e)}")
     finally:
         if temp_dir and os.path.exists(temp_dir):
             try: shutil.rmtree(temp_dir); logger.info(f"Cleaned temp dir: {temp_dir}")
-            except Exception as e: logger.error(f"Failed to clean temp dir {temp_dir}: {e}", exc_info=True)
+            except Exception as e: logger.error(f"Failed to clean temp dir {temp_dir}: {e}", exp_info=True)
 
 def handle_js_file(file_path, script_owner_id, user_folder, file_name, message):
     try:
         save_user_file(script_owner_id, file_name, 'js')
         threading.Thread(target=run_js_script, args=(file_path, script_owner_id, user_folder, file_name, message)).start()
     except Exception as e:
-        logger.error(f"❌ Error processing JS file {file_name} for {script_owner_id}: {e}", exc_info=True)
+        logger.error(f"❌ Error processing JS file {file_name} for {script_owner_id}: {e}", exp_info=True)
         bot.reply_to(message, f"❌ Error processing JS file: {str(e)}")
 
 def handle_py_file(file_path, script_owner_id, user_folder, file_name, message):
@@ -984,7 +983,7 @@ def handle_py_file(file_path, script_owner_id, user_folder, file_name, message):
         save_user_file(script_owner_id, file_name, 'py')
         threading.Thread(target=run_script, args=(file_path, script_owner_id, user_folder, file_name, message)).start()
     except Exception as e:
-        logger.error(f"❌ Error processing Python file {file_name} for {script_owner_id}: {e}", exc_info=True)
+        logger.error(f"❌ Error processing Python file {file_name} for {script_owner_id}: {e}", exp_info=True)
         bot.reply_to(message, f"❌ Error processing Python file: {str(e)}")
 # --- End File Handling ---
 
@@ -1045,7 +1044,7 @@ def _logic_send_welcome(message):
         if photo_file_id: bot.send_photo(chat_id, photo_file_id)
         bot.send_message(chat_id, welcome_msg_text, reply_markup=main_reply_markup, parse_mode='Markdown')
     except Exception as e:
-        logger.error(f"Error sending welcome to {user_id}: {e}", exc_info=True)
+        logger.error(f"Error sending welcome to {user_id}: {e}", exp_info=True)
         try: bot.send_message(chat_id, welcome_msg_text, reply_markup=main_reply_markup, parse_mode='Markdown')
         except Exception as fallback_e: logger.error(f"Fallback send_message failed for {user_id}: {fallback_e}")
 
@@ -1100,7 +1099,7 @@ def _logic_bot_speed(message):
                      f"👤 Your Level: {user_level}")
         bot.edit_message_text(speed_msg, chat_id, wait_msg.message_id)
     except Exception as e:
-        logger.error(f"Error during speed test (cmd): {e}", exc_info=True)
+        logger.error(f"Error during speed test (cmd): {e}", exp_info=True)
         bot.edit_message_text("❌ Error during speed test.", chat_id, wait_msg.message_id)
 
 def _logic_contact_owner(message):
@@ -1352,12 +1351,12 @@ def handle_file_upload_doc(message):
             if file_ext == '.js': handle_js_file(file_path, user_id, user_folder, file_name, message)
             elif file_ext == '.py': handle_py_file(file_path, user_id, user_folder, file_name, message)
     except telebot.apihelper.ApiTelegramException as e:
-         logger.error(f"Telegram API Error handling file for {user_id}: {e}", exc_info=True)
+         logger.error(f"Telegram API Error handling file for {user_id}: {e}", exp_info=True)
          if "file is too big" in str(e).lower():
-              bot.reply_to(message, f"❌ Telegram API Error: File too large to download (~20MB limit).")
+              bot.reply_to(message, f"❌ Telegram API Error: File too large to download (\~20MB limit).")
          else: bot.reply_to(message, f"❌ Telegram API Error: {str(e)}. Try later.")
     except Exception as e:
-        logger.error(f"❌ General error handling file for {user_id}: {e}", exc_info=True)
+        logger.error(f"❌ General error handling file for {user_id}: {e}", exp_info=True)
         bot.reply_to(message, f"❌ Unexpected error: {str(e)}")
 # --- End Document Handler ---
 
@@ -1403,7 +1402,7 @@ def handle_callbacks(call):
             bot.answer_callback_query(call.id, "Unknown action.")
             logger.warning(f"Unhandled callback data: {data} from user {user_id}")
     except Exception as e:
-        logger.error(f"Error handling callback '{data}' for {user_id}: {e}", exc_info=True)
+        logger.error(f"Error handling callback '{data}' for {user_id}: {e}", exp_info=True)
         try: bot.answer_callback_query(call.id, "Error processing request.", show_alert=True)
         except Exception as e_ans: logger.error(f"Failed to answer callback after error: {e_ans}")
 
@@ -1455,7 +1454,7 @@ def check_files_callback(call):
     except telebot.apihelper.ApiTelegramException as e:
          if "message is not modified" in str(e): logger.warning("Msg not modified (files).")
          else: logger.error(f"Error editing msg for file list: {e}")
-    except Exception as e: logger.error(f"Unexpected error editing msg for file list: {e}", exc_info=True)
+    except Exception as e: logger.error(f"Unexpected error editing msg for file list: {e}", exp_info=True)
 
 def file_control_callback(call):
     try:
@@ -1494,7 +1493,7 @@ def file_control_callback(call):
         logger.error(f"Error parsing file control callback: {ve}. Data: '{call.data}'")
         bot.answer_callback_query(call.id, "Error: Invalid action data.", show_alert=True)
     except Exception as e:
-        logger.error(f"Error in file_control_callback for data '{call.data}': {e}", exc_info=True)
+        logger.error(f"Error in file_control_callback for data '{call.data}': {e}", exp_info=True)
         bot.answer_callback_query(call.id, "An error occurred.", show_alert=True)
 
 def start_bot_callback(call):
@@ -1553,7 +1552,7 @@ def start_bot_callback(call):
         logger.error(f"Error parsing start callback '{call.data}': {e}")
         bot.answer_callback_query(call.id, "Error: Invalid start command.", show_alert=True)
     except Exception as e:
-        logger.error(f"Error in start_bot_callback for '{call.data}': {e}", exc_info=True)
+        logger.error(f"Error in start_bot_callback for '{call.data}': {e}", exp_info=True)
         bot.answer_callback_query(call.id, "Error starting script.", show_alert=True)
         try:
             _, script_owner_id_err_str, file_name_err = call.data.split('_', 2)
@@ -1610,7 +1609,7 @@ def stop_bot_callback(call):
         logger.error(f"Error parsing stop callback '{call.data}': {e}")
         bot.answer_callback_query(call.id, "Error: Invalid stop command.", show_alert=True)
     except Exception as e:
-        logger.error(f"Error in stop_bot_callback for '{call.data}': {e}", exc_info=True)
+        logger.error(f"Error in stop_bot_callback for '{call.data}': {e}", exp_info=True)
         bot.answer_callback_query(call.id, "Error stopping script.", show_alert=True)
 
 def restart_bot_callback(call):
@@ -1670,7 +1669,7 @@ def restart_bot_callback(call):
         logger.error(f"Error parsing restart callback '{call.data}': {e}")
         bot.answer_callback_query(call.id, "Error: Invalid restart command.", show_alert=True)
     except Exception as e:
-        logger.error(f"Error in restart_bot_callback for '{call.data}': {e}", exc_info=True)
+        logger.error(f"Error in restart_bot_callback for '{call.data}': {e}", exp_info=True)
         bot.answer_callback_query(call.id, "Error restarting.", show_alert=True)
         try:
             _, script_owner_id_err_str, file_name_err = call.data.split('_', 2)
@@ -1728,7 +1727,7 @@ def delete_bot_callback(call):
         logger.error(f"Error parsing delete callback '{call.data}': {e}")
         bot.answer_callback_query(call.id, "Error: Invalid delete command.", show_alert=True)
     except Exception as e:
-        logger.error(f"Error in delete_bot_callback for '{call.data}': {e}", exc_info=True)
+        logger.error(f"Error in delete_bot_callback for '{call.data}': {e}", exp_info=True)
         bot.answer_callback_query(call.id, "Error deleting.", show_alert=True)
 
 def logs_bot_callback(call):
@@ -1772,13 +1771,13 @@ def logs_bot_callback(call):
 
             bot.send_message(chat_id_for_reply, f"📜 Logs for `{file_name}` (User `{script_owner_id}`):\n```\n{log_content}\n```", parse_mode='Markdown')
         except Exception as e:
-            logger.error(f"Error reading/sending log {log_path}: {e}", exc_info=True)
+            logger.error(f"Error reading/sending log {log_path}: {e}", exp_info=True)
             bot.send_message(chat_id_for_reply, f"❌ Error reading log for `{file_name}`.")
     except (ValueError, IndexError) as e:
         logger.error(f"Error parsing logs callback '{call.data}': {e}")
         bot.answer_callback_query(call.id, "Error: Invalid logs command.", show_alert=True)
     except Exception as e:
-        logger.error(f"Error in logs_bot_callback for '{call.data}': {e}", exc_info=True)
+        logger.error(f"Error in logs_bot_callback for '{call.data}': {e}", exp_info=True)
         bot.answer_callback_query(call.id, "Error fetching logs.", show_alert=True)
 
 def speed_callback(call):
@@ -1800,7 +1799,7 @@ def speed_callback(call):
         bot.answer_callback_query(call.id)
         bot.edit_message_text(speed_msg, chat_id, call.message.message_id, reply_markup=create_main_menu_inline(user_id))
     except Exception as e:
-         logger.error(f"Error during speed test (cb): {e}", exc_info=True)
+         logger.error(f"Error during speed test (cb): {e}", exp_info=True)
          bot.answer_callback_query(call.id, "Error in speed test.", show_alert=True)
          try: bot.edit_message_text("〽️ Main Menu", chat_id, call.message.message_id, reply_markup=create_main_menu_inline(user_id))
          except Exception: pass
@@ -1831,7 +1830,7 @@ def back_to_main_callback(call):
     except telebot.apihelper.ApiTelegramException as e:
          if "message is not modified" in str(e): logger.warning("Msg not modified (back_to_main).")
          else: logger.error(f"API error on back_to_main: {e}")
-    except Exception as e: logger.error(f"Error handling back_to_main: {e}", exc_info=True)
+    except Exception as e: logger.error(f"Error handling back_to_main: {e}", exp_info=True)
 
 # --- Admin Callback Implementations (for Inline Buttons) ---
 def subscription_management_callback(call):
@@ -1926,7 +1925,7 @@ def handle_confirm_broadcast(call):
         logger.error(f"Error retrieving msg for broadcast confirm: {ve}")
         bot.edit_message_text(f"❌ Error starting broadcast: {ve}", chat_id, call.message.message_id, reply_markup=None)
     except Exception as e:
-        logger.error(f"Error in handle_confirm_broadcast: {e}", exc_info=True)
+        logger.error(f"Error in handle_confirm_broadcast: {e}", exp_info=True)
         bot.edit_message_text("❌ Unexpected error during broadcast confirm.", chat_id, call.message.message_id, reply_markup=None)
 
 def handle_cancel_broadcast(call):
@@ -2013,7 +2012,7 @@ def process_add_admin_id(message):
         bot.reply_to(message, "⚠️ Invalid ID. Send numerical ID or /cancel.")
         msg = bot.send_message(message.chat.id, "👑 Enter User ID to promote or /cancel.")
         bot.register_next_step_handler(msg, process_add_admin_id)
-    except Exception as e: logger.error(f"Error processing add admin: {e}", exc_info=True); bot.reply_to(message, "Error.")
+    except Exception as e: logger.error(f"Error processing add admin: {e}", exp_info=True); bot.reply_to(message, "Error.")
 
 def remove_admin_init_callback(call):
     bot.answer_callback_query(call.id)
@@ -2039,7 +2038,7 @@ def process_remove_admin_id(message):
         bot.reply_to(message, "⚠️ Invalid ID. Send numerical ID or /cancel.")
         msg = bot.send_message(message.chat.id, "👑 Enter Admin ID to remove or /cancel.")
         bot.register_next_step_handler(msg, process_remove_admin_id)
-    except Exception as e: logger.error(f"Error processing remove admin: {e}", exc_info=True); bot.reply_to(message, "Error.")
+    except Exception as e: logger.error(f"Error processing remove admin: {e}", exp_info=True); bot.reply_to(message, "Error.")
 
 def list_admins_callback(call):
     bot.answer_callback_query(call.id)
@@ -2079,7 +2078,7 @@ def process_add_subscription_details(message):
         bot.reply_to(message, f"⚠️ Invalid: {e}. Format: `ID days` or /cancel.")
         msg = bot.send_message(message.chat.id, "💳 Enter User ID & days, or /cancel.")
         bot.register_next_step_handler(msg, process_add_subscription_details)
-    except Exception as e: logger.error(f"Error processing add sub: {e}", exc_info=True); bot.reply_to(message, "Error.")
+    except Exception as e: logger.error(f"Error processing add sub: {e}", exp_info=True); bot.reply_to(message, "Error.")
 
 def remove_subscription_init_callback(call):
     bot.answer_callback_query(call.id)
@@ -2104,7 +2103,7 @@ def process_remove_subscription_id(message):
         bot.reply_to(message, "⚠️ Invalid ID. Send numerical ID or /cancel.")
         msg = bot.send_message(message.chat.id, "💳 Enter User ID to remove sub from, or /cancel.")
         bot.register_next_step_handler(msg, process_remove_subscription_id)
-    except Exception as e: logger.error(f"Error processing remove sub: {e}", exc_info=True); bot.reply_to(message, "Error.")
+    except Exception as e: logger.error(f"Error processing remove sub: {e}", exp_info=True); bot.reply_to(message, "Error.")
 
 def check_subscription_init_callback(call):
     bot.answer_callback_query(call.id)
@@ -2133,7 +2132,7 @@ def process_check_subscription_id(message):
         bot.reply_to(message, "⚠️ Invalid ID. Send numerical ID or /cancel.")
         msg = bot.send_message(message.chat.id, "💳 Enter User ID to check, or /cancel.")
         bot.register_next_step_handler(msg, process_check_subscription_id)
-    except Exception as e: logger.error(f"Error processing check sub: {e}", exc_info=True); bot.reply_to(message, "Error.")
+    except Exception as e: logger.error(f"Error processing check sub: {e}", exp_info=True); bot.reply_to(message, "Error.")
 
 # --- End Callback Query Handlers ---
 
@@ -2162,6 +2161,6 @@ if __name__ == '__main__':
         except requests.exceptions.ReadTimeout: logger.warning("Polling ReadTimeout. Restarting in 5s..."); time.sleep(5)
         except requests.exceptions.ConnectionError as ce: logger.error(f"Polling ConnectionError: {ce}. Retrying in 15s..."); time.sleep(15)
         except Exception as e:
-            logger.critical(f"💥 Unrecoverable polling error: {e}", exc_info=True)
+            logger.critical(f"💥 Unrecoverable polling error: {e}", exp_info=True)
             logger.info("Restarting polling in 30s due to critical error..."); time.sleep(30)
         finally: logger.warning("Polling attempt finished. Will restart if in loop."); time.sleep(1)
