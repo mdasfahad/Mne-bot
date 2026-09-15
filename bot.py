@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 import subprocess
 import sys
@@ -37,7 +38,7 @@ from flask import Flask
 from threading import Thread
 
 # --- Configuration from environment variables ---
-TOKEN = os.environ.get("BOT_TOKEN", "8603057367:AAG2uF_wENaVCPLgx1EOjQJoFcz1DfjkxT8")
+TOKEN = os.environ.get("8603057367:AAG2uF_wENaVCPLgx1EOjQJoFcz1DfjkxT8")
 if not TOKEN:
     raise ValueError("❌ BOT_TOKEN environment variable not set!")
 
@@ -1570,3 +1571,597 @@ def stop_bot_callback(call):
         logger.info(f"Stop request: Requester={requesting_user_id}, Owner={script_owner_id}, File='{file_name}'")
         if not (requesting_user_id == script_owner_id or requesting_user_id in admin_ids):
             bot.answer_callback_query(call.id, "⚠️ Permission denied.", show_alert=True); return
+
+        user_files_list = user_files.get(script_owner_id, [])
+        file_info = next((f for f in user_files_list if f[0] == file_name), None)
+        if not file_info:
+            bot.answer_callback_query(call.id, "⚠️ File not found.", show_alert=True); check_files_callback(call); return
+
+        file_type = file_info[1]
+        script_key = f"{script_owner_id}_{file_name}"
+
+        if not is_bot_running(script_owner_id, file_name):
+            bot.answer_callback_query(call.id, f"⚠️ Script '{file_name}' already stopped.", show_alert=True)
+            try:
+                 bot.edit_message_text(
+                     f"⚙️ Controls for: `{file_name}` ({file_type}) of User `{script_owner_id}`\nStatus: 🔴 Stopped",
+                     chat_id_for_reply, call.message.message_id,
+                     reply_markup=create_control_buttons(script_owner_id, file_name, False), parse_mode='Markdown')
+            except Exception as e: logger.error(f"Error updating buttons (already stopped): {e}")
+            return
+
+        bot.answer_callback_query(call.id, f"⏳ Stopping {file_name} for user {script_owner_id}...")
+        process_info = bot_scripts.get(script_key)
+        if process_info:
+            kill_process_tree(process_info)
+            if script_key in bot_scripts: del bot_scripts[script_key]; logger.info(f"Removed {script_key} from running after stop.")
+        else: logger.warning(f"Script {script_key} running by psutil but not in bot_scripts dict.")
+
+        try:
+            bot.edit_message_text(
+                f"⚙️ Controls for: `{file_name}` ({file_type}) of User `{script_owner_id}`\nStatus: 🔴 Stopped",
+                chat_id_for_reply, call.message.message_id,
+                reply_markup=create_control_buttons(script_owner_id, file_name, False), parse_mode='Markdown'
+            )
+        except telebot.apihelper.ApiTelegramException as e:
+             if "message is not modified" in str(e): logger.warning(f"Msg not modified after stopping {file_name}")
+             else: raise
+    except (ValueError, IndexError) as e:
+        logger.error(f"Error parsing stop callback '{call.data}': {e}")
+        bot.answer_callback_query(call.id, "Error: Invalid stop command.", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error in stop_bot_callback for '{call.data}': {e}", exc_info=True)
+        bot.answer_callback_query(call.id, "Error stopping script.", show_alert=True)
+
+def restart_bot_callback(call):
+    try:
+        _, script_owner_id_str, file_name = call.data.split('_', 2)
+        script_owner_id = int(script_owner_id_str)
+        requesting_user_id = call.from_user.id
+        chat_id_for_reply = call.message.chat.id
+
+        logger.info(f"Restart: Requester={requesting_user_id}, Owner={script_owner_id}, File='{file_name}'")
+        if not (requesting_user_id == script_owner_id or requesting_user_id in admin_ids):
+            bot.answer_callback_query(call.id, "⚠️ Permission denied.", show_alert=True); return
+
+        user_files_list = user_files.get(script_owner_id, [])
+        file_info = next((f for f in user_files_list if f[0] == file_name), None)
+        if not file_info:
+            bot.answer_callback_query(call.id, "⚠️ File not found.", show_alert=True); check_files_callback(call); return
+
+        file_type = file_info[1]; user_folder = get_user_folder(script_owner_id)
+        file_path = os.path.join(user_folder, file_name); script_key = f"{script_owner_id}_{file_name}"
+
+        if not os.path.exists(file_path):
+            bot.answer_callback_query(call.id, f"⚠️ Error: File `{file_name}` missing! Re-upload.", show_alert=True)
+            remove_user_file_db(script_owner_id, file_name)
+            if script_key in bot_scripts: del bot_scripts[script_key]
+            check_files_callback(call); return
+
+        bot.answer_callback_query(call.id, f"⏳ Restarting {file_name} for user {script_owner_id}...")
+        if is_bot_running(script_owner_id, file_name):
+            logger.info(f"Restart: Stopping existing {script_key}...")
+            process_info = bot_scripts.get(script_key)
+            if process_info: kill_process_tree(process_info)
+            if script_key in bot_scripts: del bot_scripts[script_key]
+            time.sleep(1.5)
+
+        logger.info(f"Restart: Starting script {script_key}...")
+        if file_type == 'py':
+            threading.Thread(target=run_script, args=(file_path, script_owner_id, user_folder, file_name, call.message)).start()
+        elif file_type == 'js':
+            threading.Thread(target=run_js_script, args=(file_path, script_owner_id, user_folder, file_name, call.message)).start()
+        else:
+             bot.send_message(chat_id_for_reply, f"❌ Unknown type '{file_type}' for '{file_name}'."); return
+
+        time.sleep(1.5)
+        is_now_running = is_bot_running(script_owner_id, file_name)
+        status_text = '🟢 Running' if is_now_running else '🟡 Starting (or failed)'
+        try:
+            bot.edit_message_text(
+                f"⚙️ Controls for: `{file_name}` ({file_type}) of User `{script_owner_id}`\nStatus: {status_text}",
+                chat_id_for_reply, call.message.message_id,
+                reply_markup=create_control_buttons(script_owner_id, file_name, is_now_running), parse_mode='Markdown'
+            )
+        except telebot.apihelper.ApiTelegramException as e:
+             if "message is not modified" in str(e): logger.warning(f"Msg not modified (restart {file_name})")
+             else: raise
+    except (ValueError, IndexError) as e:
+        logger.error(f"Error parsing restart callback '{call.data}': {e}")
+        bot.answer_callback_query(call.id, "Error: Invalid restart command.", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error in restart_bot_callback for '{call.data}': {e}", exc_info=True)
+        bot.answer_callback_query(call.id, "Error restarting.", show_alert=True)
+        try:
+            _, script_owner_id_err_str, file_name_err = call.data.split('_', 2)
+            script_owner_id_err = int(script_owner_id_err_str)
+            bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=create_control_buttons(script_owner_id_err, file_name_err, False))
+        except Exception as e_btn: logger.error(f"Failed to update buttons after restart error: {e_btn}")
+
+
+def delete_bot_callback(call):
+    try:
+        _, script_owner_id_str, file_name = call.data.split('_', 2)
+        script_owner_id = int(script_owner_id_str)
+        requesting_user_id = call.from_user.id
+        chat_id_for_reply = call.message.chat.id
+
+        logger.info(f"Delete: Requester={requesting_user_id}, Owner={script_owner_id}, File='{file_name}'")
+        if not (requesting_user_id == script_owner_id or requesting_user_id in admin_ids):
+            bot.answer_callback_query(call.id, "⚠️ Permission denied.", show_alert=True); return
+
+        user_files_list = user_files.get(script_owner_id, [])
+        if not any(f[0] == file_name for f in user_files_list):
+            bot.answer_callback_query(call.id, "⚠️ File not found.", show_alert=True); check_files_callback(call); return
+
+        bot.answer_callback_query(call.id, f"🗑️ Deleting {file_name} for user {script_owner_id}...")
+        script_key = f"{script_owner_id}_{file_name}"
+        if is_bot_running(script_owner_id, file_name):
+            logger.info(f"Delete: Stopping {script_key}...")
+            process_info = bot_scripts.get(script_key)
+            if process_info: kill_process_tree(process_info)
+            if script_key in bot_scripts: del bot_scripts[script_key]
+            time.sleep(0.5)
+
+        user_folder = get_user_folder(script_owner_id)
+        file_path = os.path.join(user_folder, file_name)
+        log_path = os.path.join(user_folder, f"{os.path.splitext(file_name)[0]}.log")
+        deleted_disk = []
+        if os.path.exists(file_path):
+            try: os.remove(file_path); deleted_disk.append(file_name); logger.info(f"Deleted file: {file_path}")
+            except OSError as e: logger.error(f"Error deleting {file_path}: {e}")
+        if os.path.exists(log_path):
+            try: os.remove(log_path); deleted_disk.append(os.path.basename(log_path)); logger.info(f"Deleted log: {log_path}")
+            except OSError as e: logger.error(f"Error deleting log {log_path}: {e}")
+
+        remove_user_file_db(script_owner_id, file_name)
+        deleted_str = ", ".join(f"`{f}`" for f in deleted_disk) if deleted_disk else "associated files"
+        try:
+            bot.edit_message_text(
+                f"🗑️ Record `{file_name}` (User `{script_owner_id}`) and {deleted_str} deleted!",
+                chat_id_for_reply, call.message.message_id, reply_markup=None, parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error editing msg after delete: {e}")
+            bot.send_message(chat_id_for_reply, f"🗑️ Record `{file_name}` deleted.", parse_mode='Markdown')
+    except (ValueError, IndexError) as e:
+        logger.error(f"Error parsing delete callback '{call.data}': {e}")
+        bot.answer_callback_query(call.id, "Error: Invalid delete command.", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error in delete_bot_callback for '{call.data}': {e}", exc_info=True)
+        bot.answer_callback_query(call.id, "Error deleting.", show_alert=True)
+
+def logs_bot_callback(call):
+    try:
+        _, script_owner_id_str, file_name = call.data.split('_', 2)
+        script_owner_id = int(script_owner_id_str)
+        requesting_user_id = call.from_user.id
+        chat_id_for_reply = call.message.chat.id
+
+        logger.info(f"Logs: Requester={requesting_user_id}, Owner={script_owner_id}, File='{file_name}'")
+        if not (requesting_user_id == script_owner_id or requesting_user_id in admin_ids):
+            bot.answer_callback_query(call.id, "⚠️ Permission denied.", show_alert=True); return
+
+        user_files_list = user_files.get(script_owner_id, [])
+        if not any(f[0] == file_name for f in user_files_list):
+            bot.answer_callback_query(call.id, "⚠️ File not found.", show_alert=True); check_files_callback(call); return
+
+        user_folder = get_user_folder(script_owner_id)
+        log_path = os.path.join(user_folder, f"{os.path.splitext(file_name)[0]}.log")
+        if not os.path.exists(log_path):
+            bot.answer_callback_query(call.id, f"⚠️ No logs for '{file_name}'.", show_alert=True); return
+
+        bot.answer_callback_query(call.id)
+        try:
+            log_content = ""; file_size = os.path.getsize(log_path)
+            max_log_kb = 100; max_tg_msg = 4096
+            if file_size == 0: log_content = "(Log empty)"
+            elif file_size > max_log_kb * 1024:
+                 with open(log_path, 'rb') as f: f.seek(-max_log_kb * 1024, os.SEEK_END); log_bytes = f.read()
+                 log_content = log_bytes.decode('utf-8', errors='ignore')
+                 log_content = f"(Last {max_log_kb} KB)\n...\n" + log_content
+            else:
+                 with open(log_path, 'r', encoding='utf-8', errors='ignore') as f: log_content = f.read()
+
+            if len(log_content) > max_tg_msg:
+                log_content = log_content[-max_tg_msg:]
+                first_nl = log_content.find('\n')
+                if first_nl != -1: log_content = "...\n" + log_content[first_nl+1:]
+                else: log_content = "...\n" + log_content
+            if not log_content.strip(): log_content = "(No visible content)"
+
+            bot.send_message(chat_id_for_reply, f"📜 Logs for `{file_name}` (User `{script_owner_id}`):\n```\n{log_content}\n```", parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Error reading/sending log {log_path}: {e}", exc_info=True)
+            bot.send_message(chat_id_for_reply, f"❌ Error reading log for `{file_name}`.")
+    except (ValueError, IndexError) as e:
+        logger.error(f"Error parsing logs callback '{call.data}': {e}")
+        bot.answer_callback_query(call.id, "Error: Invalid logs command.", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error in logs_bot_callback for '{call.data}': {e}", exc_info=True)
+        bot.answer_callback_query(call.id, "Error fetching logs.", show_alert=True)
+
+def speed_callback(call):
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    start_cb_ping_time = time.time()
+    try:
+        bot.edit_message_text("🏃 Testing speed...", chat_id, call.message.message_id)
+        bot.send_chat_action(chat_id, 'typing')
+        response_time = round((time.time() - start_cb_ping_time) * 1000, 2)
+        status = "🔓 Unlocked" if not bot_locked else "🔒 Locked"
+        if user_id == OWNER_ID: user_level = "👑 Owner"
+        elif user_id in admin_ids: user_level = "🛡️ Admin"
+        elif user_id in user_subscriptions and user_subscriptions[user_id].get('expiry', datetime.min) > datetime.now(): user_level = "⭐ Premium"
+        else: user_level = "🆓 Free User"
+        speed_msg = (f"⚡ Bot Speed & Status:\n\n⏱️ API Response Time: {response_time} ms\n"
+                     f"🚦 Bot Status: {status}\n"
+                     f"👤 Your Level: {user_level}")
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(speed_msg, chat_id, call.message.message_id, reply_markup=create_main_menu_inline(user_id))
+    except Exception as e:
+         logger.error(f"Error during speed test (cb): {e}", exc_info=True)
+         bot.answer_callback_query(call.id, "Error in speed test.", show_alert=True)
+         try: bot.edit_message_text("〽️ Main Menu", chat_id, call.message.message_id, reply_markup=create_main_menu_inline(user_id))
+         except Exception: pass
+
+def back_to_main_callback(call):
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    file_limit = get_user_file_limit(user_id)
+    current_files = get_user_file_count(user_id)
+    limit_str = str(file_limit) if file_limit != float('inf') else "Unlimited"
+    expiry_info = ""
+    if user_id == OWNER_ID: user_status = "👑 Owner"
+    elif user_id in admin_ids: user_status = "🛡️ Admin"
+    elif user_id in user_subscriptions:
+        expiry_date = user_subscriptions[user_id].get('expiry')
+        if expiry_date and expiry_date > datetime.now():
+            user_status = "⭐ Premium"; days_left = (expiry_date - datetime.now()).days
+            expiry_info = f"\n⏳ Subscription expires in: {days_left} days"
+        else: user_status = "🆓 Free User (Expired Sub)"
+    else: user_status = "🆓 Free User"
+    main_menu_text = (f"〽️ Welcome back, {call.from_user.first_name}!\n\n🆔 ID: `{user_id}`\n"
+                      f"🔰 Status: {user_status}{expiry_info}\n📁 Files: {current_files} / {limit_str}\n\n"
+                      f"👇 Use buttons or type commands.")
+    try:
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(main_menu_text, chat_id, call.message.message_id,
+                              reply_markup=create_main_menu_inline(user_id), parse_mode='Markdown')
+    except telebot.apihelper.ApiTelegramException as e:
+         if "message is not modified" in str(e): logger.warning("Msg not modified (back_to_main).")
+         else: logger.error(f"API error on back_to_main: {e}")
+    except Exception as e: logger.error(f"Error handling back_to_main: {e}", exc_info=True)
+
+# --- Admin Callback Implementations (for Inline Buttons) ---
+def subscription_management_callback(call):
+    bot.answer_callback_query(call.id)
+    try:
+        bot.edit_message_text("💳 Subscription Management\nSelect action:",
+                              call.message.chat.id, call.message.message_id, reply_markup=create_subscription_menu())
+    except Exception as e: logger.error(f"Error showing sub menu: {e}")
+
+def stats_callback(call):
+    bot.answer_callback_query(call.id)
+    _logic_statistics(call.message)
+    try:
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id,
+                                      reply_markup=create_main_menu_inline(call.from_user.id))
+    except Exception as e:
+        logger.error(f"Error updating menu after stats_callback: {e}")
+
+def lock_bot_callback(call):
+    global bot_locked; bot_locked = True
+    logger.warning(f"Bot locked by Admin {call.from_user.id}")
+    bot.answer_callback_query(call.id, "🔒 Bot locked.")
+    try: bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=create_main_menu_inline(call.from_user.id))
+    except Exception as e: logger.error(f"Error updating menu (lock): {e}")
+
+def unlock_bot_callback(call):
+    global bot_locked; bot_locked = False
+    logger.warning(f"Bot unlocked by Admin {call.from_user.id}")
+    bot.answer_callback_query(call.id, "🔓 Bot unlocked.")
+    try: bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=create_main_menu_inline(call.from_user.id))
+    except Exception as e: logger.error(f"Error updating menu (unlock): {e}")
+
+def run_all_scripts_callback(call):
+    _logic_run_all_scripts(call)
+
+def broadcast_init_callback(call):
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, "📢 Send message to broadcast.\n/cancel to abort.")
+    bot.register_next_step_handler(msg, process_broadcast_message)
+
+def process_broadcast_message(message):
+    user_id = message.from_user.id
+    if user_id not in admin_ids: bot.reply_to(message, "⚠️ Not authorized."); return
+    if message.text and message.text.lower() == '/cancel': bot.reply_to(message, "Broadcast cancelled."); return
+
+    broadcast_content = message.text
+    if not broadcast_content and not (message.photo or message.video or message.document or message.sticker or message.voice or message.audio):
+         bot.reply_to(message, "⚠️ Cannot broadcast empty message. Send text or media, or /cancel.")
+         msg = bot.send_message(message.chat.id, "📢 Send broadcast message or /cancel.")
+         bot.register_next_step_handler(msg, process_broadcast_message)
+         return
+
+    target_count = len(active_users)
+    markup = types.InlineKeyboardMarkup()
+    markup.row(types.InlineKeyboardButton("✅ Confirm & Send", callback_data=f"confirm_broadcast_{message.message_id}"),
+               types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_broadcast"))
+
+    preview_text = broadcast_content[:1000].strip() if broadcast_content else "(Media message)"
+    bot.reply_to(message, f"⚠️ Confirm Broadcast:\n\n```\n{preview_text}\n```\n"
+                          f"To **{target_count}** users. Sure?", reply_markup=markup, parse_mode='Markdown')
+
+def handle_confirm_broadcast(call):
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    if user_id not in admin_ids: bot.answer_callback_query(call.id, "⚠️ Admin only.", show_alert=True); return
+    try:
+        original_message = call.message.reply_to_message
+        if not original_message: raise ValueError("Could not retrieve original message.")
+
+        broadcast_text = None
+        broadcast_photo_id = None
+        broadcast_video_id = None
+
+        if original_message.text:
+            broadcast_text = original_message.text
+        elif original_message.photo:
+            broadcast_photo_id = original_message.photo[-1].file_id
+        elif original_message.video:
+            broadcast_video_id = original_message.video.file_id
+        else:
+            raise ValueError("Message has no text or supported media for broadcast.")
+
+        bot.answer_callback_query(call.id, "🚀 Starting broadcast...")
+        bot.edit_message_text(f"📢 Broadcasting to {len(active_users)} users...",
+                              chat_id, call.message.message_id, reply_markup=None)
+        thread = threading.Thread(target=execute_broadcast, args=(
+            broadcast_text, broadcast_photo_id, broadcast_video_id,
+            original_message.caption if (broadcast_photo_id or broadcast_video_id) else None,
+            chat_id))
+        thread.start()
+    except ValueError as ve:
+        logger.error(f"Error retrieving msg for broadcast confirm: {ve}")
+        bot.edit_message_text(f"❌ Error starting broadcast: {ve}", chat_id, call.message.message_id, reply_markup=None)
+    except Exception as e:
+        logger.error(f"Error in handle_confirm_broadcast: {e}", exc_info=True)
+        bot.edit_message_text("❌ Unexpected error during broadcast confirm.", chat_id, call.message.message_id, reply_markup=None)
+
+def handle_cancel_broadcast(call):
+    bot.answer_callback_query(call.id, "Broadcast cancelled.")
+    bot.delete_message(call.message.chat.id, call.message.message_id)
+    if call.message.reply_to_message:
+        try: bot.delete_message(call.message.chat.id, call.message.reply_to_message.message_id)
+        except: pass
+
+def execute_broadcast(broadcast_text, photo_id, video_id, caption, admin_chat_id):
+    sent_count = 0; failed_count = 0; blocked_count = 0
+    start_exec_time = time.time()
+    users_to_broadcast = list(active_users); total_users = len(users_to_broadcast)
+    logger.info(f"Executing broadcast to {total_users} users.")
+    batch_size = 25; delay_batches = 1.5
+
+    for i, user_id_bc in enumerate(users_to_broadcast):
+        try:
+            if broadcast_text:
+                bot.send_message(user_id_bc, broadcast_text, parse_mode='Markdown')
+            elif photo_id:
+                bot.send_photo(user_id_bc, photo_id, caption=caption, parse_mode='Markdown' if caption else None)
+            elif video_id:
+                bot.send_video(user_id_bc, video_id, caption=caption, parse_mode='Markdown' if caption else None)
+            sent_count += 1
+        except telebot.apihelper.ApiTelegramException as e:
+            err_desc = str(e).lower()
+            if any(s in err_desc for s in ["bot was blocked", "user is deactivated", "chat not found", "kicked from", "restricted"]):
+                logger.warning(f"Broadcast failed to {user_id_bc}: User blocked/inactive.")
+                blocked_count += 1
+            elif "flood control" in err_desc or "too many requests" in err_desc:
+                retry_after = 5; match = re.search(r"retry after (\d+)", err_desc)
+                if match: retry_after = int(match.group(1)) + 1
+                logger.warning(f"Flood control. Sleeping {retry_after}s...")
+                time.sleep(retry_after)
+                try:
+                    if broadcast_text: bot.send_message(user_id_bc, broadcast_text, parse_mode='Markdown')
+                    elif photo_id: bot.send_photo(user_id_bc, photo_id, caption=caption, parse_mode='Markdown' if caption else None)
+                    elif video_id: bot.send_video(user_id_bc, video_id, caption=caption, parse_mode='Markdown' if caption else None)
+                    sent_count += 1
+                except Exception as e_retry: logger.error(f"Broadcast retry failed to {user_id_bc}: {e_retry}"); failed_count +=1
+            else: logger.error(f"Broadcast failed to {user_id_bc}: {e}"); failed_count += 1
+        except Exception as e: logger.error(f"Unexpected error broadcasting to {user_id_bc}: {e}"); failed_count += 1
+
+        if (i + 1) % batch_size == 0 and i < total_users - 1:
+            logger.info(f"Broadcast batch {i//batch_size + 1} sent. Sleeping {delay_batches}s...")
+            time.sleep(delay_batches)
+        elif i % 5 == 0: time.sleep(0.2)
+
+    duration = round(time.time() - start_exec_time, 2)
+    result_msg = (f"📢 Broadcast Complete!\n\n✅ Sent: {sent_count}\n❌ Failed: {failed_count}\n"
+                  f"🚫 Blocked/Inactive: {blocked_count}\n👥 Targets: {total_users}\n⏱️ Duration: {duration}s")
+    logger.info(result_msg)
+    try: bot.send_message(admin_chat_id, result_msg)
+    except Exception as e: logger.error(f"Failed to send broadcast result to admin {admin_chat_id}: {e}")
+
+def admin_panel_callback(call):
+    bot.answer_callback_query(call.id)
+    try:
+        bot.edit_message_text("👑 Admin Panel\nManage admins (Owner actions may be restricted).",
+                              call.message.chat.id, call.message.message_id, reply_markup=create_admin_panel())
+    except Exception as e: logger.error(f"Error showing admin panel: {e}")
+
+def add_admin_init_callback(call):
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, "👑 Enter User ID to promote to Admin.\n/cancel to abort.")
+    bot.register_next_step_handler(msg, process_add_admin_id)
+
+def process_add_admin_id(message):
+    owner_id_check = message.from_user.id
+    if owner_id_check != OWNER_ID: bot.reply_to(message, "⚠️ Owner only."); return
+    if message.text.lower() == '/cancel': bot.reply_to(message, "Admin promotion cancelled."); return
+    try:
+        new_admin_id = int(message.text.strip())
+        if new_admin_id <= 0: raise ValueError("ID must be positive")
+        if new_admin_id == OWNER_ID: bot.reply_to(message, "⚠️ Owner is already Owner."); return
+        if new_admin_id in admin_ids: bot.reply_to(message, f"⚠️ User `{new_admin_id}` already Admin."); return
+        add_admin_db(new_admin_id)
+        logger.warning(f"Admin {new_admin_id} added by Owner {owner_id_check}.")
+        bot.reply_to(message, f"✅ User `{new_admin_id}` promoted to Admin.")
+        try: bot.send_message(new_admin_id, "🎉 Congrats! You are now an Admin.")
+        except Exception as e: logger.error(f"Failed to notify new admin {new_admin_id}: {e}")
+    except ValueError:
+        bot.reply_to(message, "⚠️ Invalid ID. Send numerical ID or /cancel.")
+        msg = bot.send_message(message.chat.id, "👑 Enter User ID to promote or /cancel.")
+        bot.register_next_step_handler(msg, process_add_admin_id)
+    except Exception as e: logger.error(f"Error processing add admin: {e}", exc_info=True); bot.reply_to(message, "Error.")
+
+def remove_admin_init_callback(call):
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, "👑 Enter User ID of Admin to remove.\n/cancel to abort.")
+    bot.register_next_step_handler(msg, process_remove_admin_id)
+
+def process_remove_admin_id(message):
+    owner_id_check = message.from_user.id
+    if owner_id_check != OWNER_ID: bot.reply_to(message, "⚠️ Owner only."); return
+    if message.text.lower() == '/cancel': bot.reply_to(message, "Admin removal cancelled."); return
+    try:
+        admin_id_remove = int(message.text.strip())
+        if admin_id_remove <= 0: raise ValueError("ID must be positive")
+        if admin_id_remove == OWNER_ID: bot.reply_to(message, "⚠️ Owner cannot remove self."); return
+        if admin_id_remove not in admin_ids: bot.reply_to(message, f"⚠️ User `{admin_id_remove}` not Admin."); return
+        if remove_admin_db(admin_id_remove):
+            logger.warning(f"Admin {admin_id_remove} removed by Owner {owner_id_check}.")
+            bot.reply_to(message, f"✅ Admin `{admin_id_remove}` removed.")
+            try: bot.send_message(admin_id_remove, "ℹ️ You are no longer an Admin.")
+            except Exception as e: logger.error(f"Failed to notify removed admin {admin_id_remove}: {e}")
+        else: bot.reply_to(message, f"❌ Failed to remove admin `{admin_id_remove}`. Check logs.")
+    except ValueError:
+        bot.reply_to(message, "⚠️ Invalid ID. Send numerical ID or /cancel.")
+        msg = bot.send_message(message.chat.id, "👑 Enter Admin ID to remove or /cancel.")
+        bot.register_next_step_handler(msg, process_remove_admin_id)
+    except Exception as e: logger.error(f"Error processing remove admin: {e}", exc_info=True); bot.reply_to(message, "Error.")
+
+def list_admins_callback(call):
+    bot.answer_callback_query(call.id)
+    try:
+        admin_list_str = "\n".join(f"- `{aid}` {'(Owner)' if aid == OWNER_ID else ''}" for aid in sorted(list(admin_ids)))
+        if not admin_list_str: admin_list_str = "(No Owner/Admins configured!)"
+        bot.edit_message_text(f"👑 Current Admins:\n\n{admin_list_str}", call.message.chat.id,
+                              call.message.message_id, reply_markup=create_admin_panel(), parse_mode='Markdown')
+    except Exception as e: logger.error(f"Error listing admins: {e}")
+
+def add_subscription_init_callback(call):
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, "💳 Enter User ID & days (e.g., `12345678 30`).\n/cancel to abort.")
+    bot.register_next_step_handler(msg, process_add_subscription_details)
+
+def process_add_subscription_details(message):
+    admin_id_check = message.from_user.id
+    if admin_id_check not in admin_ids: bot.reply_to(message, "⚠️ Not authorized."); return
+    if message.text.lower() == '/cancel': bot.reply_to(message, "Sub add cancelled."); return
+    try:
+        parts = message.text.split();
+        if len(parts) != 2: raise ValueError("Incorrect format")
+        sub_user_id = int(parts[0].strip()); days = int(parts[1].strip())
+        if sub_user_id <= 0 or days <= 0: raise ValueError("User ID/days must be positive")
+
+        current_expiry = user_subscriptions.get(sub_user_id, {}).get('expiry')
+        start_date_new_sub = datetime.now()
+        if current_expiry and current_expiry > start_date_new_sub: start_date_new_sub = current_expiry
+        new_expiry = start_date_new_sub + timedelta(days=days)
+        save_subscription(sub_user_id, new_expiry)
+
+        logger.info(f"Sub for {sub_user_id} by admin {admin_id_check}. Expiry: {new_expiry:%Y-%m-%d}")
+        bot.reply_to(message, f"✅ Sub for `{sub_user_id}` by {days} days.\nNew expiry: {new_expiry:%Y-%m-%d}")
+        try: bot.send_message(sub_user_id, f"🎉 Sub activated/extended by {days} days! Expires: {new_expiry:%Y-%m-%d}.")
+        except Exception as e: logger.error(f"Failed to notify {sub_user_id} of new sub: {e}")
+    except ValueError as e:
+        bot.reply_to(message, f"⚠️ Invalid: {e}. Format: `ID days` or /cancel.")
+        msg = bot.send_message(message.chat.id, "💳 Enter User ID & days, or /cancel.")
+        bot.register_next_step_handler(msg, process_add_subscription_details)
+    except Exception as e: logger.error(f"Error processing add sub: {e}", exc_info=True); bot.reply_to(message, "Error.")
+
+def remove_subscription_init_callback(call):
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, "💳 Enter User ID to remove sub.\n/cancel to abort.")
+    bot.register_next_step_handler(msg, process_remove_subscription_id)
+
+def process_remove_subscription_id(message):
+    admin_id_check = message.from_user.id
+    if admin_id_check not in admin_ids: bot.reply_to(message, "⚠️ Not authorized."); return
+    if message.text.lower() == '/cancel': bot.reply_to(message, "Sub removal cancelled."); return
+    try:
+        sub_user_id_remove = int(message.text.strip())
+        if sub_user_id_remove <= 0: raise ValueError("ID must be positive")
+        if sub_user_id_remove not in user_subscriptions:
+            bot.reply_to(message, f"⚠️ User `{sub_user_id_remove}` no active sub in memory."); return
+        remove_subscription_db(sub_user_id_remove)
+        logger.warning(f"Sub removed for {sub_user_id_remove} by admin {admin_id_check}.")
+        bot.reply_to(message, f"✅ Sub for `{sub_user_id_remove}` removed.")
+        try: bot.send_message(sub_user_id_remove, "ℹ️ Your subscription removed by admin.")
+        except Exception as e: logger.error(f"Failed to notify {sub_user_id_remove} of sub removal: {e}")
+    except ValueError:
+        bot.reply_to(message, "⚠️ Invalid ID. Send numerical ID or /cancel.")
+        msg = bot.send_message(message.chat.id, "💳 Enter User ID to remove sub from, or /cancel.")
+        bot.register_next_step_handler(msg, process_remove_subscription_id)
+    except Exception as e: logger.error(f"Error processing remove sub: {e}", exc_info=True); bot.reply_to(message, "Error.")
+
+def check_subscription_init_callback(call):
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, "💳 Enter User ID to check sub.\n/cancel to abort.")
+    bot.register_next_step_handler(msg, process_check_subscription_id)
+
+def process_check_subscription_id(message):
+    admin_id_check = message.from_user.id
+    if admin_id_check not in admin_ids: bot.reply_to(message, "⚠️ Not authorized."); return
+    if message.text.lower() == '/cancel': bot.reply_to(message, "Sub check cancelled."); return
+    try:
+        sub_user_id_check = int(message.text.strip())
+        if sub_user_id_check <= 0: raise ValueError("ID must be positive")
+        if sub_user_id_check in user_subscriptions:
+            expiry_dt = user_subscriptions[sub_user_id_check].get('expiry')
+            if expiry_dt:
+                if expiry_dt > datetime.now():
+                    days_left = (expiry_dt - datetime.now()).days
+                    bot.reply_to(message, f"✅ User `{sub_user_id_check}` active sub.\nExpires: {expiry_dt:%Y-%m-%d %H:%M:%S} ({days_left} days left).")
+                else:
+                    bot.reply_to(message, f"⚠️ User `{sub_user_id_check}` expired sub (On: {expiry_dt:%Y-%m-%d %H:%M:%S}).")
+                    remove_subscription_db(sub_user_id_check)
+            else: bot.reply_to(message, f"⚠️ User `{sub_user_id_check}` in sub list, but expiry missing. Re-add if needed.")
+        else: bot.reply_to(message, f"ℹ️ User `{sub_user_id_check}` no active sub record.")
+    except ValueError:
+        bot.reply_to(message, "⚠️ Invalid ID. Send numerical ID or /cancel.")
+        msg = bot.send_message(message.chat.id, "💳 Enter User ID to check, or /cancel.")
+        bot.register_next_step_handler(msg, process_check_subscription_id)
+    except Exception as e: logger.error(f"Error processing check sub: {e}", exc_info=True); bot.reply_to(message, "Error.")
+
+# --- End Callback Query Handlers ---
+
+# --- Cleanup Function ---
+def cleanup():
+    logger.warning("Shutdown. Cleaning up processes...")
+    script_keys_to_stop = list(bot_scripts.keys())
+    if not script_keys_to_stop: logger.info("No scripts running. Exiting."); return
+    logger.info(f"Stopping {len(script_keys_to_stop)} scripts...")
+    for key in script_keys_to_stop:
+        if key in bot_scripts: logger.info(f"Stopping: {key}"); kill_process_tree(bot_scripts[key])
+        else: logger.info(f"Script {key} already removed.")
+    logger.warning("Cleanup finished.")
+atexit.register(cleanup)
+
+# --- Main Execution ---
+if __name__ == '__main__':
+    logger.info("="*40 + "\n🤖 Bot Starting Up...\n" + f"🐍 Python: {sys.version.split()[0]}\n" +
+                f"🔧 Base Dir: {BASE_DIR}\n📁 Upload Dir: {UPLOAD_BOTS_DIR}\n" +
+                f"📊 Data Dir: {IROTECH_DIR}\n🔑 Owner ID: {OWNER_ID}\n🛡️ Admins: {admin_ids}\n" + "="*40)
+    keep_alive()
+    logger.info("🚀 Starting polling...")
+    while True:
+        try:
+            bot.infinity_polling(logger_level=logging.INFO, timeout=60, long_polling_timeout=30)
+        except requests.exceptions.ReadTimeout: logger.warning("Polling ReadTimeout. Restarting in 5s..."); time.sleep(5)
+        except requests.exceptions.ConnectionError as ce: logger.error(f"Polling ConnectionError: {ce}. Retrying in 15s..."); time.sleep(15)
+        except Exception as e:
+            logger.critical(f"💥 Unrecoverable polling error: {e}", exc_info=True)
+            logger.info("Restarting polling in 30s due to critical error..."); time.sleep(30)
+        finally: logger.warning("Polling attempt finished. Will restart if in loop."); time.sleep(1)
