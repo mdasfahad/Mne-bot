@@ -38,7 +38,7 @@ from flask import Flask
 from threading import Thread
 
 # --- Configuration from environment variables ---
-TOKEN = os.environ.get("8666375193:AAFZfkwCilbQVCx7Rzynz-gdwL2_f4MCTYs")
+TOKEN = os.environ.get("8603057367:AAG2uF_wENaVCPLgx1EOjQJoFcz1DfjkxT8")
 if not TOKEN:
     raise ValueError("❌ BOT_TOKEN environment variable not set!")
 
